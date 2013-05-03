@@ -1,0 +1,50 @@
+Compile using:
+
+	gcc -o lxc-snap lxc-snap.c /usr/lib/x86_64-linux-gnu/liblxc.so.0
+
+Note we need to ship lxccontainer.h and lxclock.h with liblxc0
+
+How can this be used?
+
+First, create a directory backed container.  Now create an overlayfs snapshot
+of it.  That snapshot is what you will begin using.  This is critical, because
+all snapshots will reference the original directory backed rootfs, so if you
+start makign changes to it, all snapshots will also reflect those changes, which
+is not what you want.
+
+So for example
+
+	sudo lxc-create -t ubuntu -n base
+	sudo lxc-clone -s -B overlayfs base mysql1
+
+Now make initial customizations, and snapshot:
+
+	sudo lxc-snap mysql1
+
+This will create a snapshot container /var/lib/lxcsnaps/mysql1_0.  You can actually
+start it up if you like using 'sudo lxc-start -P /var/lib/lxcsnaps -n mysql1_0'.
+However, that is not recommended.
+
+Next, make some more changes, and
+
+	sudo lxc-snap mysql1
+
+Do this a few times.  Now you realize you lost a change at step 3.  So you can
+
+	sudo lxc-snap -r mysql1_2 mysql1_tmp
+
+Now you can recover what you need from the (directory-backed) /var/lib/lxc/mysql1_tmp.
+When you're done, destroy it
+
+	sudo lxc-destroy -n mysql1_tmp
+
+The
+
+	lxc-snap -l
+
+and
+
+	lxc-snap -l mysql1
+
+are not yet implemented, but are intended to make it easier to remember
+what snapshots exist that you can go back to.
