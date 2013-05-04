@@ -246,14 +246,14 @@ int snapshot_container(char *cname)
 
 	strftime(buffer, 25, "%Y:%m:%d %H:%M:%S", tm_info);
 
-	char *dfnam = alloca(strlen(snappath) + strlen("data") + 2);
-	sprintf(dfnam, "%s/data", snappath);
-	FILE *f = fopen(dfnam, "a");
+	char *dfnam = alloca(strlen(snappath) + strlen(newname) + 5);
+	sprintf(dfnam, "%s/%s/ts", snappath, newname);
+	FILE *f = fopen(dfnam, "w");
 	if (!f) {
 		printf("Failed to open %s\n", dfnam);
 		return EXIT_FAILURE;
 	}
-	fprintf(f, "%s: %s: %s\n", cname, newname, buffer);
+	fprintf(f, "%s", buffer);
 	fclose(f);
 
 	return EXIT_SUCCESS;
