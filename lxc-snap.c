@@ -205,7 +205,68 @@ int get_next_index(char *cname, char *lxcpath)
 	}
 }
 
-int snapshot_container(char *cname)
+static bool file_exists(char *f)
+{
+	struct stat statbuf;
+
+	return stat(f, &statbuf) == 0;
+}
+
+static int copy_file(char *old, char *new)
+{
+	int in, out;
+	ssize_t len, ret;
+	char buf[8096];
+	struct stat sbuf;
+
+	if (file_exists(new)) {
+		fprintf(stderr, "copy destination %s exists", new);
+		return EXIT_FAILURE;
+	}
+	ret = stat(old, &sbuf);
+	if (ret < 0) {
+		fprintf(stderr, "stat'ing %s", old);
+		return EXIT_FAILURE;
+	}
+
+	in = open(old, O_RDONLY);
+	if (in < 0) {
+		fprintf(stderr, "opening original file %s", old);
+		return EXIT_FAILURE;
+	}
+	out = open(new, O_CREAT | O_EXCL | O_WRONLY, 0644);
+	if (out < 0) {
+		fprintf(stderr, "opening new file %s", new);
+		close(in);
+		return EXIT_FAILURE;
+	}
+
+	while (1) {
+		len = read(in, buf, 8096);
+		if (len < 0) {
+			fprintf(stderr, "reading old file %s", old);
+			goto err;
+		}
+		if (len == 0)
+			break;
+		ret = write(out, buf, len);
+		if (ret < len) {  // should we retry?
+			fprintf(stderr, "write to new file %s was interrupted", new);
+			goto err;
+		}
+	}
+	close(in);
+	close(out);
+
+	return EXIT_SUCCESS;
+
+err:
+	close(in);
+	close(out);
+	return EXIT_FAILURE;
+}
+
+int snapshot_container(char *cname, char *commentfile)
 {
 	const char *lxcpath;
 	char *snappath;
@@ -255,6 +316,14 @@ int snapshot_container(char *cname)
 	}
 	fprintf(f, "%s", buffer);
 	fclose(f);
+
+	if (commentfile) {
+		// $p / $name / comment \0
+		int len = strlen(snappath) + strlen(newname) + 10;
+		char *path = alloca(len);
+		sprintf(path, "%s/%s/comment", snappath, newname);
+		return copy_file(commentfile, path);
+	}
 
 	return EXIT_SUCCESS;
 }
@@ -314,7 +383,7 @@ int main(int argc, char *argv[])
 {
 	int opt;
 	int fn = SNAP;
-	char *cname = NULL;
+	char *cname = NULL, *commentfile = NULL;
 	int ret;
 
 	while ((opt = getopt(argc, argv, "l::r:h")) != -1) {
@@ -327,6 +396,9 @@ int main(int argc, char *argv[])
 		case 'r':
 			fn = RESTORE;
 			cname = optarg;
+			break;
+		case 'c':
+			commentfile = optarg;
 			break;
 		case 'h': usage(argv[0], EXIT_SUCCESS);
 		default: usage(argv[0], EXIT_FAILURE);
@@ -344,6 +416,6 @@ int main(int argc, char *argv[])
 
 	if (fn == RESTORE)
 		restore_container(cname, argv[optind]);
-	ret = snapshot_container(argv[optind]);
+	ret = snapshot_container(argv[optind], commentfile);
 	exit(ret);
 }
