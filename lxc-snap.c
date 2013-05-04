@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <sys/types.h>
+#include <dirent.h>
 #include "lxccontainer.h"
 
 /*
@@ -53,6 +55,71 @@ void usage(char *me, int ret)
 	exit(ret);
 }
 
+int add_if_unique(char ***listp, char *s, int *szp, int *nump)
+{
+	int i, found=0, tmp;
+	char **list = *listp;
+
+	for (i = 0; i < *nump; i++) {
+		tmp = strcmp(list[i], s);
+		if (tmp == 0)
+			found=1;
+		if (tmp >= 0)
+			break;
+	}
+
+	if (found)
+		return 1;
+
+	if (*nump + 1 == *szp) {
+		*szp += 100;
+		*listp = realloc(*listp, *szp * sizeof(char *));
+		list = *listp;
+	}
+
+	for (tmp = *nump; tmp >= i; tmp--)
+		list[tmp+1] = list[tmp];
+	list[i] = strdup(s);
+	if (!list[i])
+		return 0;
+
+	(*nump)++;
+
+	return 1;
+}
+
+void list_unique_bases(char *path)
+{
+	DIR *d = opendir(path);
+	struct dirent *direntp;
+	char **names, *p;
+	int i, size = 100, entries = 0;
+
+	names = malloc(size * sizeof(char *));
+	if (!names) {
+		fprintf(stderr, "Out of memory\n");
+		exit(1);
+	}
+	if (!d) {
+		fprintf(stderr, "Failed to open %s\n", path);
+		exit(1);
+	}
+	while ((direntp = readdir(d)) != NULL) {
+		p = rindex(direntp->d_name, '_');
+		if (!p)
+			continue;
+		*p = '\0';
+		if (!add_if_unique(&names, direntp->d_name, &size, &entries))
+			exit(1);
+	}
+	closedir(d);
+
+	for (i=0; i<entries; i++)
+		printf("%s\n", names[i]);
+
+	exit(0);
+}
+
 void list_containers(char *cname)
 {
 	const char *lxcpath;
@@ -62,7 +129,7 @@ void list_containers(char *cname)
 	sprintf(snappath, "%ssnaps", lxcpath);
 
 	if (!cname) {
-		printf("not yet implemented\n");
+		list_unique_bases(snappath);
 		exit(1);
 	}
 	printf("not yet implemented\n");
