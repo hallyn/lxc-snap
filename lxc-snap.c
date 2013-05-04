@@ -88,21 +88,22 @@ int add_if_unique(char ***listp, char *s, int *szp, int *nump)
 	return 1;
 }
 
-void list_unique_bases(char *path)
+int list_unique_bases(char *path)
 {
 	DIR *d = opendir(path);
 	struct dirent *direntp;
 	char **names, *p;
 	int i, size = 100, entries = 0;
 
+	if (!d) {
+		fprintf(stderr, "Failed to open %s\n", path);
+		return EXIT_FAILURE;
+	}
 	names = malloc(size * sizeof(char *));
 	if (!names) {
 		fprintf(stderr, "Out of memory\n");
-		exit(1);
-	}
-	if (!d) {
-		fprintf(stderr, "Failed to open %s\n", path);
-		exit(1);
+		closedir(d);
+		return EXIT_FAILURE;
 	}
 	while ((direntp = readdir(d)) != NULL) {
 		p = rindex(direntp->d_name, '_');
@@ -110,30 +111,82 @@ void list_unique_bases(char *path)
 			continue;
 		*p = '\0';
 		if (!add_if_unique(&names, direntp->d_name, &size, &entries))
-			exit(1);
+			return EXIT_FAILURE;
 	}
 	closedir(d);
 
 	for (i=0; i<entries; i++)
 		printf("%s\n", names[i]);
 
-	exit(0);
+	free(names);
+
+	return EXIT_SUCCESS;
+}
+
+void print_timestamp(char *p, char *c)
+{
+	char *path, ts[100];
+	int len;
+	FILE *f;
+	int i;
+
+	/* $p + '/' + $c + '/ts' + '\0' */
+	len = strlen(p) + strlen(c) + 5;
+	path = alloca(len);
+	sprintf(path, "%s/%s/ts", p, c);
+	if ((f = fopen(path, "r")) == NULL)
+		return;
+	ts[99] = '\0';
+	if (fread(ts, 1, 99, f) < 0) {
+		fclose(f);
+		return;
+	}
+	for (i=0; i<100; i++)
+		if (ts[i] == '\n')
+			ts[i] = '\0';
+	printf("\t%s", ts);
+	fclose(f);
+}
+
+int list_bases(char *path, char *cname)
+{
+	DIR *d = opendir(path);
+	struct dirent *direntp;
+	char *p;
+
+	while ((direntp = readdir(d)) != NULL) {
+		p = rindex(direntp->d_name, '_');
+		if (!p)
+			continue;
+		p++;
+		if (strncmp(direntp->d_name, cname, strlen(cname)) != 0)
+			continue;
+		printf("%s %s", cname, p);
+		// Now print the timestamp (if properly configured)
+		print_timestamp(path, direntp->d_name);
+		printf("\n");
+	}
+	closedir(d);
+
+	return EXIT_SUCCESS;
 }
 
 void list_containers(char *cname)
 {
 	const char *lxcpath;
 	char *snappath;
+	int ret;
+
 	lxcpath = lxc_get_default_config_path();
 	snappath = alloca(strlen(lxcpath) + strlen("snaps") + 1);
 	sprintf(snappath, "%ssnaps", lxcpath);
 
-	if (!cname) {
-		list_unique_bases(snappath);
-		exit(1);
-	}
-	printf("not yet implemented\n");
-	exit(1);
+	if (!cname)
+		ret = list_unique_bases(snappath);
+	else
+		ret = list_bases(snappath, cname);
+
+	exit(ret);
 }
 
 int get_next_index(char *cname, char *lxcpath)
@@ -279,6 +332,10 @@ int main(int argc, char *argv[])
 		default: usage(argv[0], EXIT_FAILURE);
 		}
 	}
+
+	if (!cname && optind < argc)
+		cname = argv[optind];
+
 	if (fn == LIST)
 		list_containers(cname);
 
