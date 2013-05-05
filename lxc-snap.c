@@ -412,7 +412,7 @@ int main(int argc, char *argv[])
 	char *cname = NULL, *commentfile = NULL;
 	int ret;
 
-	while ((opt = getopt(argc, argv, "l::r:h")) != -1) {
+	while ((opt = getopt(argc, argv, "l::r:hc:")) != -1) {
 		switch (opt) {
 		case 'l':
 			fn = LIST;
