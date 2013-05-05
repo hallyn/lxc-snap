@@ -130,6 +130,7 @@ void print_timestamp(char *p, char *c)
 	FILE *f;
 	int i;
 
+	memset(ts, 0, 100);
 	/* $p + '/' + $c + '/ts' + '\0' */
 	len = strlen(p) + strlen(c) + 5;
 	path = alloca(len);
@@ -164,9 +165,8 @@ void print_comment(char *p, char *c)
 
 	printf("Commit comment:\n");
 	while (getline(&line, &len, f) != -1) {
-		printf("%s", line);
+		printf(" %s", line);
 	}
-	printf("\n");
 
 	if (line)
 		free(line);
@@ -175,24 +175,31 @@ void print_comment(char *p, char *c)
 
 int list_bases(char *path, char *cname)
 {
-	DIR *d = opendir(path);
-	struct dirent *direntp;
+	struct dirent **nlist;
+	int i, n;
 	char *p;
 
-	while ((direntp = readdir(d)) != NULL) {
-		p = rindex(direntp->d_name, '_');
+	n = scandir(path, &nlist, NULL, alphasort);
+	if (n < 0) {
+		perror("scansort");
+		return EXIT_FAILURE;
+	}
+	for (i=0; i<n; i++) {
+		p = rindex(nlist[i]->d_name, '_');
 		if (!p)
-			continue;
+			goto next;
 		p++;
-		if (strncmp(direntp->d_name, cname, strlen(cname)) != 0)
-			continue;
+		if (strncmp(nlist[i]->d_name, cname, strlen(cname)) != 0)
+			goto next;
 		printf("%s %s", cname, p);
 		// Now print the timestamp (if properly configured)
-		print_timestamp(path, direntp->d_name);
+		print_timestamp(path, nlist[i]->d_name);
 		printf("\n");
-		print_comment(path, direntp->d_name);
+		print_comment(path, nlist[i]->d_name);
+next:
+		free(nlist[i]);
 	}
-	closedir(d);
+	free(nlist);
 
 	return EXIT_SUCCESS;
 }
