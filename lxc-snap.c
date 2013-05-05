@@ -148,6 +148,31 @@ void print_timestamp(char *p, char *c)
 	fclose(f);
 }
 
+void print_comment(char *p, char *c)
+{
+	char *path, *line = NULL;
+	size_t len;
+	FILE *f;
+	int i;
+
+	/* $p + '/' + $c + '/comment' + '\0' */
+	len = strlen(p) + strlen(c) + 10;
+	path = alloca(len);
+	sprintf(path, "%s/%s/comment", p, c);
+	if ((f = fopen(path, "r")) == NULL)
+		return;
+
+	printf("Commit comment:\n");
+	while (getline(&line, &len, f) != -1) {
+		printf("%s", line);
+	}
+	printf("\n");
+
+	if (line)
+		free(line);
+	fclose(f);
+}
+
 int list_bases(char *path, char *cname)
 {
 	DIR *d = opendir(path);
@@ -165,6 +190,7 @@ int list_bases(char *path, char *cname)
 		// Now print the timestamp (if properly configured)
 		print_timestamp(path, direntp->d_name);
 		printf("\n");
+		print_comment(path, direntp->d_name);
 	}
 	closedir(d);
 
