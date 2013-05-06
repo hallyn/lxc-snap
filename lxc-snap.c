@@ -440,8 +440,8 @@ void restore_container(char *cname, char *newname)
 		printf("could not open snapshotted container %s\n", cname);
 		exit(EXIT_FAILURE);
 	}
-	flags = LXC_CLONE_KEEPNAME | LXC_CLONE_KEEPMACADDR;
-	c2 = c->clone(c, newname, lxcpath, flags, "dir", NULL, 0);
+	flags = LXC_CLONE_SNAPSHOT | LXC_CLONE_KEEPMACADDR | LXC_CLONE_KEEPNAME;
+	c2 = c->clone(c, newname, lxcpath, flags, "overlayfs", NULL, 0);
 	if (!c2) {
 		printf("Failed restoring the container %s from %s to %s\n", orig, cname, newname);
 		lxc_container_put(c);
