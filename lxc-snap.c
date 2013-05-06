@@ -299,6 +299,45 @@ err:
 	return EXIT_FAILURE;
 }
 
+/*
+ * Make sure the container to be snapshotted is backed by overlayfs.
+ * Otherwise it's not safe to snapshot it.  See README.
+ */
+int is_overlayfs(const char *lxcpath, const char *cname)
+{
+	/* $lxcpath + "/" +  $cname + "/config" + '\0' */
+	char *path, *line = NULL, *p;
+	FILE *f;
+	size_t len;
+	int ret = 0;
+
+	path = alloca(strlen(cname) + strlen(lxcpath) + 9);
+	sprintf(path, "%s/%s/config", lxcpath, cname);
+
+	if ((f = fopen(path, "r")) == NULL) {
+		fprintf(stderr, "Failed to open %s\n", path);
+		return 0;
+	}
+
+	while (getline(&line, &len, f) != -1) {
+		for (p=line; p && (*p == ' ' || *p == '\t'); p++) ;
+		if (!p || strncmp(p, "lxc.rootfs", 10) != 0)
+			continue;
+		if (strncmp(p, "lxc.rootfs.mount", 16) == 0)
+			continue;
+		if (strstr(p, "overlayfs") != NULL)
+			ret = 1;
+		else
+			ret = 0;
+		break;
+	}
+
+	if (line)
+		free(line);
+	fclose(f);
+	return ret;
+}
+
 int snapshot_container(char *cname, char *commentfile)
 {
 	const char *lxcpath;
@@ -315,6 +354,14 @@ int snapshot_container(char *cname, char *commentfile)
 		printf("Failed to create snapshot directory %s\n", snappath);
 		return EXIT_FAILURE;
 	}
+
+	if (!is_overlayfs(lxcpath, cname)) {
+		printf("%s is not overlayfs.  Changes would corrupt the snapshot.\n", cname);
+		printf("Please create an overlayfs clone to snapshot and continue\n");
+		printf("developing, leaving %s pristine.\n", cname);
+		return EXIT_FAILURE;
+	}
+
 	newname = alloca(strlen(cname) + 15);
 	sprintf(newname, "%s_%d", cname, i);
 	c = lxc_container_new(cname, NULL);
