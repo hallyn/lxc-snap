@@ -1,50 +1,91 @@
-Compile using:
+BUILD AND INSTALL
 
-	gcc -o lxc-snap lxc-snap.c /usr/lib/x86_64-linux-gnu/liblxc.so.0
+Build lxc-snap by typing 'make'.
+Install into /usr/bin by typing 'DESTDIR=/usr make install'.
+Install into /home/$USER/bin by typing
+	mkdir /home/$USER/bin
+	DESTDIR=/home/$USER make install
 
-Note we need to ship lxccontainer.h and lxclock.h with liblxc0
+BACKGROUND
 
-How can this be used?
+Lxc supports containers backed by overlayfs snapshots.  The way this is
+typically done is to create a container backed by a regular directory,
+then create a new container which mounts the first container's rootfs
+as a read-only lower mount, with a new private delta directory as
+its read-write upper mount.  For instance, you could
 
-First, create a directory backed container.  Now create an overlayfs snapshot
-of it.  That snapshot is what you will begin using.  This is critical, because
-all snapshots will reference the original directory backed rootfs, so if you
-start makign changes to it, all snapshots will also reflect those changes, which
-is not what you want.
+	sudo lxc-create -t ubuntu -n r0 # create a normal directory
+	sudo lxc-clone -B overlayfs -s r0 o1 # create overlayfs clone
 
-So for example
+The second container, o1, when started up will mount /var/lib/lxc/o1/delta0
+as a writeably overlay on top of /var/lib/lxc/r0/rootfs, and use that as its
+root filesystem.
+
+From here you can clone o1 to a new container o2.  This simply copies the
+the overlayfs delta from o1 to o2, and you is done with
+
+	sudo lxc-clone -s o1 o2
+
+LXC-SNAP USAGE
+
+One of the obvious use cases of these snapshot clones is to support
+incremental development of rootfs images.  Make some changes, snapshot,
+make some more changes, snapshot, revert...
+
+lxc-snap is made to more easily support this use case.  You begin with a
+overlayfs backed container, make some changes, snapshot, make some changes,
+snapshot...  This is a simpler model than manually using clone because
+you continue developing the same container, o1, while the snapshots are
+kept away until you need them.
+
+EXAMPLE
+
+Create your first container
 
 	sudo lxc-create -t ubuntu -n base
-	sudo lxc-clone -s -B overlayfs base mysql1
+	sudo lxc-clone -s -B overlayfs base mysql
 
 Now make initial customizations, and snapshot:
 
-	sudo lxc-snap mysql1
+	sudo lxc-snap mysql
 
-This will create a snapshot container /var/lib/lxcsnaps/mysql1_0.  You can actually
-start it up if you like using 'sudo lxc-start -P /var/lib/lxcsnaps -n mysql1_0'.
-However, that is not recommended.
+This will create a snapshot container /var/lib/lxcsnaps/mysql_0.  You can actually
+start it up if you like using 'sudo lxc-start -P /var/lib/lxcsnaps -n mysql_0'.
+(However, that is not recommended, as it will cause changes in the rootfs)
 
-Next, make some more changes, and
+Next, make some more changes.  Write a comment about the changes you made in this
+version,
 
-	sudo lxc-snap mysql1
+echo "Initial definition of table doomahicky" > /tmp/comment
 
-Do this a few times.  Now you realize you lost a change at step 3.  So you can
+	sudo lxc-snap -c /tmp/comment mysql
 
-	sudo lxc-snap -r mysql1_2 mysql1_tmp
-
-Now you can recover what you need from the (directory-backed) /var/lib/lxc/mysql1_tmp.
-When you're done, destroy it
-
-	sudo lxc-destroy -n mysql1_tmp
-
-The
+Do this a few times.  Now you realize you lost something you needed.  You can
+see the list of containers which have snapshots using
 
 	lxc-snap -l
 
-and
+and the list of versions of container mysql using
 
-	lxc-snap -l mysql1
+	lxc-snap -l mysql
 
-are not yet implemented, but are intended to make it easier to remember
-what snapshots exist that you can go back to.
+
+Note that it shows you the time when the snapshot was created, and any comments
+you logged with the snapshot.  You see that what you wanted was version 2, so
+recover that snapshot.  You can destroy container mysql and restore version 2
+to it, or (I would recommend) use a different name to restore the snapshot to.
+
+Use a different name with:
+
+	sudo lxc-snap -r mysql_2 mysql_tmp
+
+or destroy mysql and restore the snapshot to it using
+
+	sudo lxc-destroy -n mysql
+	sudo lxc-snap -r mysql_2 mysql
+
+When you'd like to export a container, you can clone it back to a directory
+backed container and tar it up:
+
+	sudo lxc-clone -B dir mysql mysql_ship
+	sudo tar zcf /srv/mysql_ship.tar.gz /var/lib/lxc/mysql_ship
