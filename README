@@ -1,10 +1,4 @@
-BUILD AND INSTALL
-
-Build lxc-snap by typing 'make'.
-Install into /usr/bin by typing 'DESTDIR=/usr make install'.
-Install into /home/$USER/bin by typing
-	mkdir /home/$USER/bin
-	DESTDIR=/home/$USER make install
+lxc-snap: lxc container snapshot management tool
 
 BACKGROUND
 
@@ -26,17 +20,17 @@ the overlayfs delta from o1 to o2, and you is done with
 
 	sudo lxc-clone -s o1 o2
 
-LXC-SNAP USAGE
+LXC-SNAP
 
 One of the obvious use cases of these snapshot clones is to support
 incremental development of rootfs images.  Make some changes, snapshot,
 make some more changes, snapshot, revert...
 
-lxc-snap is made to more easily support this use case.  You begin with a
-overlayfs backed container, make some changes, snapshot, make some changes,
-snapshot...  This is a simpler model than manually using clone because
-you continue developing the same container, o1, while the snapshots are
-kept away until you need them.
+lxc-snap is a small program using the lxc API to more easily support
+this use case.  You begin with a overlayfs backed container, make some
+changes, snapshot, make some changes, snapshot...  This is a simpler
+model than manually using clone because you continue developing the same
+container, o1, while the snapshots are kept away until you need them.
 
 EXAMPLE
 
@@ -89,3 +83,39 @@ backed container and tar it up:
 
 	sudo lxc-clone -B dir mysql mysql_ship
 	sudo tar zcf /srv/mysql_ship.tar.gz /var/lib/lxc/mysql_ship
+
+BUILD AND INSTALL
+
+To use lxc-snap, you currently need to be using lxc from the ubuntu-lxc
+daily ppa.  On an ubuntu system (at least 12.04) you can
+
+	sudo add-apt-repository ppa:ubuntu-lxc/daily
+	sudo apt-get update
+	sudo apt-get dist-upgrade
+	sudo apt-get install lxc
+
+lxc-snap will either become a part of the lxc package, or will become a
+separate package.  Currently it is available at
+git://github.com/hallyn/lxc-snap.  Fetch it using:
+
+	git clone git://github.com/hallyn/lxc-snap
+
+Then build lxc-snap by typing 'make'.
+
+	cd lxc-snap
+	make
+
+Install into /usr/bin by typing
+
+	sudo DESTDIR=/usr make install
+
+or install into /home/$USER/bin by typing
+
+	mkdir /home/$USER/bin
+	DESTDIR=/home/$USER make install
+
+Note that lxc-snap is in very early development.  It's usage may
+change over time, and as it currently ships a copy of liblxc .h
+files it needs, it may occasionally break and need to be updated
+from git and rebuilt.  Using a package (as soon as it becomes
+available) is recommended.
