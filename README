@@ -119,3 +119,34 @@ change over time, and as it currently ships a copy of liblxc .h
 files it needs, it may occasionally break and need to be updated
 from git and rebuilt.  Using a package (as soon as it becomes
 available) is recommended.
+
+NOTES ON OVERLAYFS
+
+Overlayfs appears to have a limit of 10G.  This can be limiting
+depending on the rootfs which you are developing.
+
+NOTES ON BTRFS AND LVM
+
+Btrfs and lvm both support snapshots.  However, both present issues with how
+lxcpath currently is intended to work.
+
+LVM only supports a single level snapshot - no snapshots of snapshots.  So
+lxc-snap actually works with an lvm-based container, whoever restore
+(lxc-snap -r) fails since it wasnt to snapshot the snapshot.  Rather, we
+would need to do a non-snapshot, copy clone to restore the snapshot.
+
+Btrfs currently expects $lxcpath to be a separate btrfs.  Subvolume clones
+must exist on the same filesystem.  Since lxc-snap wants to snapshot
+${lxcpath}/c1 to ${lxcpath}snap/c1_0, and ${lxcpath}snap by default is a
+different filesystem, that fails.  Some possible solutions:
+
+	1. Just bind-mount $lxcpath and ${lxcpath}snap from directories
+	   on the same btrfs.
+	2. Put snapshots into $lxcpath/snapshots instead.  This may actually
+	   be cleaner than the current approach as it doesn't pollute the
+	   dirname($lxcpath) (i.e. /var/lib) as much.
+
+So, I've not yet fully decided, but I think I will
+
+	1. put snapshots into $lxcpath/snapshots
+	2. have lxc-snap -r for lvm automatically do a copy clone.

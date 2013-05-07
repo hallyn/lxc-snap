@@ -386,8 +386,13 @@ int snapshot_container(const char *lxcpath, char *cname, char *commentfile)
 		return EXIT_FAILURE;
 	}
 
+#if 0
+	// To support btrfs we need to keep snapshots elsewhere.
 	if (!is_btrfs(lxcpath, cname) && !is_overlayfs(lxcpath, cname)) {
-		fprintf(stderr, "%s is not overlayfs or btrfs.  Changes would corrupt the snapshot.\n", cname);
+#else
+	if (!is_overlayfs(lxcpath, cname)) {
+#endif
+		fprintf(stderr, "%s is not overlayfs.  Changes would corrupt the snapshot.\n", cname);
 		fprintf(stderr, "Please create an overlayfs clone to snapshot and continue\n");
 		fprintf(stderr, "developing, leaving %s pristine.\n", cname);
 		return EXIT_FAILURE;
