@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <dirent.h>
+#include <sys/ioctl.h>
 #include "lxccontainer.h"
 
 /*
@@ -282,6 +283,55 @@ err:
 	return EXIT_FAILURE;
 }
 
+/* Some defines needed to detect btrfs */
+struct btrfs_ioctl_space_info {
+	unsigned long long flags;
+	unsigned long long total_bytes;
+	unsigned long long used_bytes;
+};
+
+struct btrfs_ioctl_space_args {
+	unsigned long long space_slots;
+	unsigned long long total_spaces;
+	struct btrfs_ioctl_space_info spaces[0];
+};
+
+#define BTRFS_IOCTL_MAGIC 0x94
+#define BTRFS_IOC_SUBVOL_GETFLAGS _IOR(BTRFS_IOCTL_MAGIC, 25, unsigned long long)
+#define BTRFS_IOC_SPACE_INFO _IOWR(BTRFS_IOCTL_MAGIC, 20, \
+                                    struct btrfs_ioctl_space_args)
+
+int is_btrfs(const char *lxcpath, const char *cname)
+{
+	struct stat st;
+	int fd, ret;
+	struct btrfs_ioctl_space_args sargs;
+	char *path = alloca(strlen(lxcpath) + strlen(cname) + 2);
+
+	sprintf(path, "%s/%s", lxcpath, cname);
+
+	// make sure this is a btrfs filesystem
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return 0;
+	sargs.space_slots = 0;
+	sargs.total_spaces = 0;
+	ret = ioctl(fd, BTRFS_IOC_SPACE_INFO, &sargs);
+	close(fd);
+	if (ret < 0)
+		return 0;
+
+	// and make sure it's a subvolume.
+	ret = stat(path, &st);
+	if (ret < 0)
+		return 0;
+
+	if (st.st_ino == 256 && S_ISDIR(st.st_mode))
+		return 1;
+
+	return 0;
+}
+
 /*
  * Make sure the container to be snapshotted is backed by overlayfs.
  * Otherwise it's not safe to snapshot it.  See README.
@@ -336,8 +386,8 @@ int snapshot_container(const char *lxcpath, char *cname, char *commentfile)
 		return EXIT_FAILURE;
 	}
 
-	if (!is_overlayfs(lxcpath, cname)) {
-		printf("%s is not overlayfs.  Changes would corrupt the snapshot.\n", cname);
+	if (!is_btrfs(lxcpath, cname) && !is_overlayfs(lxcpath, cname)) {
+		printf("%s is not overlayfs or btrfs.  Changes would corrupt the snapshot.\n", cname);
 		printf("Please create an overlayfs clone to snapshot and continue\n");
 		printf("developing, leaving %s pristine.\n", cname);
 		return EXIT_FAILURE;
@@ -349,7 +399,7 @@ int snapshot_container(const char *lxcpath, char *cname, char *commentfile)
 	if (!c)
 		return EXIT_FAILURE;
 	flags = LXC_CLONE_SNAPSHOT | LXC_CLONE_KEEPMACADDR | LXC_CLONE_KEEPNAME;
-	c2 = c->clone(c, newname, snappath, flags, "overlayfs", NULL, 0);
+	c2 = c->clone(c, newname, snappath, flags, NULL, NULL, 0);
 	if (!c2) {
 		lxc_container_put(c);
 		return EXIT_FAILURE;
@@ -416,7 +466,7 @@ void restore_container(const char *lxcpath, char *cname, char *newname)
 		exit(EXIT_FAILURE);
 	}
 	flags = LXC_CLONE_SNAPSHOT | LXC_CLONE_KEEPMACADDR | LXC_CLONE_KEEPNAME;
-	c2 = c->clone(c, newname, lxcpath, flags, "overlayfs", NULL, 0);
+	c2 = c->clone(c, newname, lxcpath, flags, NULL, NULL, 0);
 	if (!c2) {
 		printf("Failed restoring the container %s from %s to %s\n", orig, cname, newname);
 		lxc_container_put(c);
