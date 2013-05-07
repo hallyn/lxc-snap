@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <sys/ioctl.h>
+#include <sys/param.h>
 #include "lxccontainer.h"
 
 /*
@@ -195,8 +196,8 @@ void list_containers(const char *lxcpath, char *cname)
 	char *snappath;
 	int ret;
 
-	snappath = alloca(strlen(lxcpath) + strlen("snaps") + 1);
-	sprintf(snappath, "%ssnaps", lxcpath);
+	snappath = alloca(strlen(lxcpath) + strlen("/snapshots") + 1);
+	sprintf(snappath, "%s/snapshots", lxcpath);
 
 	if (!cname)
 		ret = list_unique_bases(snappath);
@@ -281,6 +282,67 @@ err:
 	close(in);
 	close(out);
 	return EXIT_FAILURE;
+}
+
+/* detect lvm */
+static int is_lvm(const char *lxcpath, char *cname)
+{
+	char devp[MAXPATHLEN], buf[4], *path;
+	FILE *fout;
+	int ret;
+	struct stat statbuf;
+
+	path = alloca(strlen(lxcpath) + strlen(cname) + 9);
+	sprintf(path, "%s/%s/rootfs", lxcpath, cname);
+
+	if (strncmp(path, "lvm:", 4) == 0)
+		return 1; // take their word for it
+
+	ret = stat(path, &statbuf);
+	if (ret != 0)
+		return 0;
+	if (!S_ISBLK(statbuf.st_mode))
+		return 0;
+
+	ret = snprintf(devp, MAXPATHLEN, "/sys/dev/block/%d:%d/dm/uuid",
+			major(statbuf.st_rdev), minor(statbuf.st_rdev));
+	if (ret < 0 || ret >= MAXPATHLEN) {
+		fprintf(stderr, "lvm uuid pathname too long");
+		return 0;
+	}
+	fout = fopen(devp, "r");
+	if (!fout)
+		return 0;
+	ret = fread(buf, 1, 4, fout);
+	fclose(fout);
+	if (ret != 4 || strncmp(buf, "LVM-", 4) != 0)
+		return 0;
+	return 1;
+}
+
+/* detect zfs */
+static int is_zfs(const char *lxcpath, char *cname)
+{
+	FILE *f;
+	char output[4096];
+	int found=0;
+	char *path = alloca(strlen(lxcpath) + strlen(cname) + 9);
+
+	sprintf(path, "%s/%s/rootfs", lxcpath, cname);
+
+	if ((f = popen("zfs list 2> /dev/null", "r")) == NULL) {
+		fprintf(stderr, "popen failed");
+		return 0;
+	}
+	while (fgets(output, 4096, f)) {
+		if (strstr(output, path)) {
+			found = 1;
+			break;
+		}
+	}
+	(void) pclose(f);
+
+	return found;
 }
 
 /* Some defines needed to detect btrfs */
@@ -377,8 +439,8 @@ int snapshot_container(const char *lxcpath, char *cname, char *commentfile)
 	int i, flags;
 	struct lxc_container *c, *c2;
 
-	snappath = alloca(strlen(lxcpath) + strlen("snaps") + 1);
-	sprintf(snappath, "%ssnaps", lxcpath);
+	snappath = alloca(strlen(lxcpath) + strlen("/snapshots") + 1);
+	sprintf(snappath, "%s/snapshots", lxcpath);
 	i = get_next_index(snappath, cname);
 
 	if (mkdir(snappath, 0755) < 0 && errno != EEXIST) {
@@ -386,15 +448,10 @@ int snapshot_container(const char *lxcpath, char *cname, char *commentfile)
 		return EXIT_FAILURE;
 	}
 
-#if 0
-	// To support btrfs we need to keep snapshots elsewhere.
-	if (!is_btrfs(lxcpath, cname) && !is_overlayfs(lxcpath, cname)) {
-#else
-	if (!is_overlayfs(lxcpath, cname)) {
-#endif
-		fprintf(stderr, "%s is not overlayfs.  Changes would corrupt the snapshot.\n", cname);
-		fprintf(stderr, "Please create an overlayfs clone to snapshot and continue\n");
-		fprintf(stderr, "developing, leaving %s pristine.\n", cname);
+	if (!is_overlayfs(lxcpath, cname) && !is_btrfs(lxcpath, cname) && !is_zfs(lxcpath, cname)
+			&& !is_lvm(lxcpath, cname)) {
+		fprintf(stderr, "%s is not snapshottable.", cname);
+		fprintf(stderr, "Only overlayfs, zfs and btrfs are supported\n");
 		return EXIT_FAILURE;
 	}
 
@@ -453,8 +510,8 @@ void restore_container(const char *lxcpath, char *cname, char *newname)
 	struct lxc_container *c, *c2;
 	int flags;
 
-	snappath = alloca(strlen(lxcpath) + strlen("snaps") + 1);
-	sprintf(snappath, "%ssnaps", lxcpath);
+	snappath = alloca(strlen(lxcpath) + strlen("/snapshots") + 1);
+	sprintf(snappath, "%s/snapshots", lxcpath);
 	orig = strdupa(cname);
 	for (p = orig + strlen(orig) - 1; p >= orig; p--) {
 		if (*p == '_') {
@@ -473,7 +530,10 @@ void restore_container(const char *lxcpath, char *cname, char *newname)
 		fprintf(stderr, "could not open snapshotted container %s\n", cname);
 		exit(EXIT_FAILURE);
 	}
-	flags = LXC_CLONE_SNAPSHOT | LXC_CLONE_KEEPMACADDR | LXC_CLONE_KEEPNAME;
+	flags = LXC_CLONE_KEEPMACADDR | LXC_CLONE_KEEPNAME;
+	if (!is_lvm(snappath, cname))
+		flags |= LXC_CLONE_SNAPSHOT;
+
 	c2 = c->clone(c, newname, lxcpath, flags, NULL, NULL, 0);
 	if (!c2) {
 		fprintf(stderr, "Failed restoring the container %s from %s to %s\n", orig, cname, newname);
