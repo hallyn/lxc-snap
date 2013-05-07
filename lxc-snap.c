@@ -29,29 +29,14 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
-
-/*
- * lxc-create -t ubuntu -n s1
- * lxc-snap s1
- *      . creates /var/lib/lxcsnaps/s1_$n
- *      . adds 's1_n date' to /var/lib/lxcsnaps/data
- * 'lxc-snap -l' lists all containers which have snapshots
- * 'lxc-snap -l s1' shows all snapshots and timestamps for s1
- * 'lxc-snap -r s1_5 s1_peek' will snapshot s1 (if it exists) then clone s1_n to s1_peek
- *
- * Note that since c_n is overlayfs referencing /var/lib/lxc/c/rootfs, we can't just
- * restore c_n to /var/lib/lxc/c :)  Hence we require a new name
- *
- * You can always simply fire up a snapshot using
- *     sudo lxc-start -P /var/lib/lxcsnaps -n s1_$n
- */
-
 void usage(char *me, int ret)
 {
 	printf("Usage: %s -l: list containers which have snapshots\n", me);
 	printf("       %s -l c: list all snapshots of container c\n", me);
 	printf("       %s c: create a new snapshot of container c\n", me);
 	printf("       %s -r c_n c_tmp: restore container c_n to c_tmp\n", me);
+	printf("       %s -P lxcpath: use given lxcpath\n", me);
+	printf("          Snapshots will be placed in ${lxcpath}snaps\n");
 	exit(ret);
 }
 
@@ -204,13 +189,11 @@ next:
 	return EXIT_SUCCESS;
 }
 
-void list_containers(char *cname)
+void list_containers(const char *lxcpath, char *cname)
 {
-	const char *lxcpath;
 	char *snappath;
 	int ret;
 
-	lxcpath = lxc_get_default_config_path();
 	snappath = alloca(strlen(lxcpath) + strlen("snaps") + 1);
 	sprintf(snappath, "%ssnaps", lxcpath);
 
@@ -222,7 +205,7 @@ void list_containers(char *cname)
 	exit(ret);
 }
 
-int get_next_index(char *cname, char *lxcpath)
+int get_next_index(const char *lxcpath, char *cname)
 {
 	char *fname;
 	struct stat sb;
@@ -338,17 +321,15 @@ int is_overlayfs(const char *lxcpath, const char *cname)
 	return ret;
 }
 
-int snapshot_container(char *cname, char *commentfile)
+int snapshot_container(const char *lxcpath, char *cname, char *commentfile)
 {
-	const char *lxcpath;
-	char *snappath;
-	lxcpath = lxc_get_default_config_path();
+	char *snappath, *newname;
+	int i, flags;
+	struct lxc_container *c, *c2;
+
 	snappath = alloca(strlen(lxcpath) + strlen("snaps") + 1);
 	sprintf(snappath, "%ssnaps", lxcpath);
-	int i = get_next_index(cname, snappath);
-	char *newname;
-	struct lxc_container *c, *c2;
-	int flags;
+	i = get_next_index(snappath, cname);
 
 	if (mkdir(snappath, 0755) < 0 && errno != EEXIST) {
 		printf("Failed to create snapshot directory %s\n", snappath);
@@ -408,19 +389,13 @@ int snapshot_container(char *cname, char *commentfile)
 	return EXIT_SUCCESS;
 }
 
-void restore_container(char *cname, char *newname)
+void restore_container(const char *lxcpath, char *cname, char *newname)
 {
-	// first try to snapshot the existing container
-	// then destroy it (again if it exists)
-	// finally restore the original
-	char *orig, *p;
-	const char *lxcpath;
-	char *snappath;
-	lxcpath = lxc_get_default_config_path();
-	snappath = alloca(strlen(lxcpath) + strlen("snaps") + 1);
+	char *orig, *p, *snappath;
 	struct lxc_container *c, *c2;
 	int flags;
 
+	snappath = alloca(strlen(lxcpath) + strlen("snaps") + 1);
 	sprintf(snappath, "%ssnaps", lxcpath);
 	orig = strdupa(cname);
 	for (p = orig + strlen(orig) - 1; p >= orig; p--) {
@@ -465,8 +440,9 @@ int main(int argc, char *argv[])
 	int fn = SNAP;
 	char *cname = NULL, *commentfile = NULL;
 	int ret;
+	const char *lxcpath = lxc_get_default_config_path();
 
-	while ((opt = getopt(argc, argv, "l::r:hc:")) != -1) {
+	while ((opt = getopt(argc, argv, "l::P:r:hc:")) != -1) {
 		switch (opt) {
 		case 'l':
 			fn = LIST;
@@ -476,6 +452,9 @@ int main(int argc, char *argv[])
 		case 'r':
 			fn = RESTORE;
 			cname = optarg;
+			break;
+		case 'P':
+			lxcpath = optarg;
 			break;
 		case 'c':
 			commentfile = optarg;
@@ -489,13 +468,13 @@ int main(int argc, char *argv[])
 		cname = argv[optind];
 
 	if (fn == LIST)
-		list_containers(cname);
+		list_containers(lxcpath, cname);
 
 	if (optind >= argc)
 		usage(argv[0], EXIT_FAILURE);
 
 	if (fn == RESTORE)
-		restore_container(cname, argv[optind]);
-	ret = snapshot_container(argv[optind], commentfile);
+		restore_container(lxcpath, cname, argv[optind]);
+	ret = snapshot_container(lxcpath, argv[optind], commentfile);
 	exit(ret);
 }
