@@ -322,7 +322,7 @@ static int is_lvm(const char *lxcpath, char *cname)
 	FILE *f;
 	size_t len;
 	int found = 0;
-	char *path = alloca(strlen(lxcpath) + strlen(cname) + 9), *line = NULL, *p;
+	char *path = alloca(strlen(lxcpath) + strlen(cname) + 9), *line = NULL, *p, *p2;
 
 	sprintf(path, "%s/%s/config", lxcpath, cname);
 	if ((f = fopen(path, "r")) == NULL)
@@ -342,6 +342,8 @@ static int is_lvm(const char *lxcpath, char *cname)
 	if (!found)
 		return 0;
 
+	if ((p2 = index(p, '\n')) != NULL)
+		*p2 = '\0';
 	return is_lvm_dev(p);
 }
 
