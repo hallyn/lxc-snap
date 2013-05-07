@@ -8,7 +8,7 @@
 #include <dirent.h>
 #include <sys/ioctl.h>
 #include <sys/param.h>
-#include "lxccontainer.h"
+#include <lxc/lxccontainer.h>
 
 /*
  * (C) Copyright Canonical Ltd. 2012
