@@ -306,9 +306,9 @@ int is_btrfs(const char *lxcpath, const char *cname)
 	struct stat st;
 	int fd, ret;
 	struct btrfs_ioctl_space_args sargs;
-	char *path = alloca(strlen(lxcpath) + strlen(cname) + 2);
+	char *path = alloca(strlen(lxcpath) + strlen(cname) + 9);
 
-	sprintf(path, "%s/%s", lxcpath, cname);
+	sprintf(path, "%s/%s/rootfs", lxcpath, cname);
 
 	// make sure this is a btrfs filesystem
 	fd = open(path, O_RDONLY);
@@ -382,25 +382,28 @@ int snapshot_container(const char *lxcpath, char *cname, char *commentfile)
 	i = get_next_index(snappath, cname);
 
 	if (mkdir(snappath, 0755) < 0 && errno != EEXIST) {
-		printf("Failed to create snapshot directory %s\n", snappath);
+		fprintf(stderr, "Failed to create snapshot directory %s\n", snappath);
 		return EXIT_FAILURE;
 	}
 
 	if (!is_btrfs(lxcpath, cname) && !is_overlayfs(lxcpath, cname)) {
-		printf("%s is not overlayfs or btrfs.  Changes would corrupt the snapshot.\n", cname);
-		printf("Please create an overlayfs clone to snapshot and continue\n");
-		printf("developing, leaving %s pristine.\n", cname);
+		fprintf(stderr, "%s is not overlayfs or btrfs.  Changes would corrupt the snapshot.\n", cname);
+		fprintf(stderr, "Please create an overlayfs clone to snapshot and continue\n");
+		fprintf(stderr, "developing, leaving %s pristine.\n", cname);
 		return EXIT_FAILURE;
 	}
 
 	newname = alloca(strlen(cname) + 15);
 	sprintf(newname, "%s_%d", cname, i);
-	c = lxc_container_new(cname, NULL);
-	if (!c)
+	c = lxc_container_new(cname, lxcpath);
+	if (!c) {
+		fprintf(stderr, "Error opening %s:%s\n", lxcpath, cname);
 		return EXIT_FAILURE;
+	}
 	flags = LXC_CLONE_SNAPSHOT | LXC_CLONE_KEEPMACADDR | LXC_CLONE_KEEPNAME;
 	c2 = c->clone(c, newname, snappath, flags, NULL, NULL, 0);
 	if (!c2) {
+		fprintf(stderr, "clone of %s:%s failed\n", lxcpath, cname);
 		lxc_container_put(c);
 		return EXIT_FAILURE;
 	}
@@ -422,7 +425,7 @@ int snapshot_container(const char *lxcpath, char *cname, char *commentfile)
 	sprintf(dfnam, "%s/%s/ts", snappath, newname);
 	FILE *f = fopen(dfnam, "w");
 	if (!f) {
-		printf("Failed to open %s\n", dfnam);
+		fprintf(stderr, "Failed to open %s\n", dfnam);
 		return EXIT_FAILURE;
 	}
 	fprintf(f, "%s", buffer);
@@ -459,16 +462,16 @@ void restore_container(const char *lxcpath, char *cname, char *newname)
 
 	c = lxc_container_new(cname, snappath);
 	if (!c) {
-		printf("Failure create new internal container object\n");
+		fprintf(stderr, "Failure create new internal container object\n");
 		exit(EXIT_FAILURE);
 	} else if (!c->is_defined(c)) {
-		printf("could not open snapshotted container %s\n", cname);
+		fprintf(stderr, "could not open snapshotted container %s\n", cname);
 		exit(EXIT_FAILURE);
 	}
 	flags = LXC_CLONE_SNAPSHOT | LXC_CLONE_KEEPMACADDR | LXC_CLONE_KEEPNAME;
 	c2 = c->clone(c, newname, lxcpath, flags, NULL, NULL, 0);
 	if (!c2) {
-		printf("Failed restoring the container %s from %s to %s\n", orig, cname, newname);
+		fprintf(stderr, "Failed restoring the container %s from %s to %s\n", orig, cname, newname);
 		lxc_container_put(c);
 		exit(EXIT_FAILURE);
 	}
