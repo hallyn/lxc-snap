@@ -285,15 +285,12 @@ err:
 }
 
 /* detect lvm */
-static int is_lvm(const char *lxcpath, char *cname)
+static int is_lvm_dev(const char *path)
 {
-	char devp[MAXPATHLEN], buf[4], *path;
+	char devp[MAXPATHLEN], buf[4];
 	FILE *fout;
 	int ret;
 	struct stat statbuf;
-
-	path = alloca(strlen(lxcpath) + strlen(cname) + 9);
-	sprintf(path, "%s/%s/rootfs", lxcpath, cname);
 
 	if (strncmp(path, "lvm:", 4) == 0)
 		return 1; // take their word for it
@@ -318,6 +315,34 @@ static int is_lvm(const char *lxcpath, char *cname)
 	if (ret != 4 || strncmp(buf, "LVM-", 4) != 0)
 		return 0;
 	return 1;
+}
+
+static int is_lvm(const char *lxcpath, char *cname)
+{
+	FILE *f;
+	size_t len;
+	int found = 0;
+	char *path = alloca(strlen(lxcpath) + strlen(cname) + 9), *line = NULL, *p;
+
+	sprintf(path, "%s/%s/config", lxcpath, cname);
+	if ((f = fopen(path, "r")) == NULL)
+		return 0;
+
+	while (getline(&line, &len, f) != -1) {
+		for (p=line; p && (*p == ' ' || *p == '\t'); p++) ;
+		if (!p || strncmp(p, "lxc.rootfs", 10) != 0)
+			continue;
+		p += 10;
+		while (*p && (*p == ' ' || *p == '\t' || *p == '=')) p++;
+		found=1;
+		break;
+	}
+	fclose(f);
+
+	if (!found)
+		return 0;
+
+	return is_lvm_dev(p);
 }
 
 /* detect zfs */
@@ -524,7 +549,7 @@ void restore_container(const char *lxcpath, char *cname, char *newname)
 
 	c = lxc_container_new(cname, snappath);
 	if (!c) {
-		fprintf(stderr, "Failure create new internal container object\n");
+		fprintf(stderr, "Failure create internal container object\n");
 		exit(EXIT_FAILURE);
 	} else if (!c->is_defined(c)) {
 		fprintf(stderr, "could not open snapshotted container %s\n", cname);
