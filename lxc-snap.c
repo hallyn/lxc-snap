@@ -490,7 +490,7 @@ int snapshot_container(const char *lxcpath, char *cname, char *commentfile)
 		return EXIT_FAILURE;
 	}
 	flags = LXC_CLONE_SNAPSHOT | LXC_CLONE_KEEPMACADDR | LXC_CLONE_KEEPNAME;
-	c2 = c->clone(c, newname, snappath, flags, NULL, NULL, 0);
+	c2 = c->clone(c, newname, snappath, flags, NULL, NULL, 0, NULL);
 	if (!c2) {
 		fprintf(stderr, "clone of %s:%s failed\n", lxcpath, cname);
 		lxc_container_put(c);
@@ -561,7 +561,7 @@ void restore_container(const char *lxcpath, char *cname, char *newname)
 	if (!is_lvm(snappath, cname))
 		flags |= LXC_CLONE_SNAPSHOT;
 
-	c2 = c->clone(c, newname, lxcpath, flags, NULL, NULL, 0);
+	c2 = c->clone(c, newname, lxcpath, flags, NULL, NULL, 0, NULL);
 	if (!c2) {
 		fprintf(stderr, "Failed restoring the container %s from %s to %s\n", orig, cname, newname);
 		lxc_container_put(c);
